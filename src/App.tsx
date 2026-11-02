@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { HeroSection } from './components/HeroSection';
 import { ExploreProgram } from './components/ExploreProgram';
@@ -9,18 +9,74 @@ import { TrainingCycle } from './components/TrainingCycle';
 import { AppDownloadBanner } from './components/AppDownloadBanner';
 import { Footer } from './components/Footer';
 import { InterestModal } from './components/InterestModal';
-import { AuthModal } from './components/AuthModal';
+import { StudentLoginScreen } from './components/StudentLoginScreen';
+import { ProLoginScreen } from './components/ProLoginScreen';
 import { ScrollProgressBar, BackToTopButton } from './components/ScrollExperience';
 
 export const App: React.FC = () => {
   const [isInterestModalOpen, setIsInterestModalOpen] = useState(false);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authRole, setAuthRole] = useState<'aluno' | 'personal'>('aluno');
+  const [isStudentLoginOpen, setIsStudentLoginOpen] = useState(false);
+  const [isProLoginOpen, setIsProLoginOpen] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<string>('premium');
 
+  useEffect(() => {
+    const handleHashCheck = () => {
+      const hash = window.location.hash.toLowerCase();
+      if (hash === '#login-aluno' || hash === '#aluno') {
+        setIsStudentLoginOpen(true);
+        setIsProLoginOpen(false);
+      } else if (hash === '#login-pro' || hash === '#login-profissional' || hash === '#profissional') {
+        setIsProLoginOpen(true);
+        setIsStudentLoginOpen(false);
+      }
+    };
+
+    handleHashCheck();
+    window.addEventListener('hashchange', handleHashCheck);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleCloseLogins();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('hashchange', handleHashCheck);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
   const handleOpenAuth = (role: 'aluno' | 'personal' = 'aluno') => {
-    setAuthRole(role);
-    setIsAuthModalOpen(true);
+    if (role === 'personal') {
+      setIsProLoginOpen(true);
+      setIsStudentLoginOpen(false);
+      window.history.pushState(null, '', '#login-profissional');
+    } else {
+      setIsStudentLoginOpen(true);
+      setIsProLoginOpen(false);
+      window.history.pushState(null, '', '#login-aluno');
+    }
+  };
+
+  const handleCloseLogins = () => {
+    setIsStudentLoginOpen(false);
+    setIsProLoginOpen(false);
+    if (window.location.hash.includes('login') || window.location.hash.includes('aluno') || window.location.hash.includes('pro')) {
+      window.history.pushState(null, '', window.location.pathname + window.location.search);
+    }
+  };
+
+  const handleSwitchToPro = () => {
+    setIsStudentLoginOpen(false);
+    setIsProLoginOpen(true);
+    window.history.pushState(null, '', '#login-profissional');
+  };
+
+  const handleSwitchToStudent = () => {
+    setIsProLoginOpen(false);
+    setIsStudentLoginOpen(true);
+    window.history.pushState(null, '', '#login-aluno');
   };
 
   const handleOpenInterest = (planId?: string) => {
@@ -88,10 +144,25 @@ export const App: React.FC = () => {
         defaultPlanId={selectedPlanId}
       />
 
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-        initialRole={authRole}
+      {/* 7. Telas Dedicadas de Login para cada Perfil */}
+      <StudentLoginScreen
+        isOpen={isStudentLoginOpen}
+        onClose={handleCloseLogins}
+        onSwitchToPro={handleSwitchToPro}
+        onOpenSignUp={() => {
+          handleCloseLogins();
+          handleOpenInterest('aluno');
+        }}
+      />
+
+      <ProLoginScreen
+        isOpen={isProLoginOpen}
+        onClose={handleCloseLogins}
+        onSwitchToStudent={handleSwitchToStudent}
+        onOpenSignUp={() => {
+          handleCloseLogins();
+          handleOpenInterest('plano-pro');
+        }}
       />
     </div>
   );
