@@ -15,6 +15,7 @@ import {
   TrendingUp,
   AlertCircle
 } from 'lucide-react';
+import { GoogleCpfCompletionStep, type GoogleUserProfile } from './GoogleCpfCompletionStep';
 
 interface ProLoginScreenProps {
   isOpen: boolean;
@@ -39,8 +40,35 @@ export const ProLoginScreen: React.FC<ProLoginScreenProps> = ({
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSent, setForgotSent] = useState(false);
+  const [googleProfile, setGoogleProfile] = useState<GoogleUserProfile | null>(null);
+  const [registeredUser, setRegisteredUser] = useState<{ name: string; cpf?: string } | null>(null);
 
   if (!isOpen) return null;
+
+  const handleStartGoogleAuth = () => {
+    setIsLoading(true);
+    setErrorMessage('');
+    setTimeout(() => {
+      setIsLoading(false);
+      // Simula o retorno inicial do Google OAuth para Profissionais
+      setGoogleProfile({
+        googleId: 'google-pro-' + Math.random().toString(36).substring(2, 9),
+        email: 'prof.felipe@odomofit.com',
+        fullName: 'Prof. Felipe Santoro',
+        avatarUrl: 'https://images.unsplash.com/photo-1568602471122-7832951cc4c5?auto=format&fit=crop&w=150&q=80',
+        role: 'trainer',
+      });
+    }, 600);
+  };
+
+  const handleGoogleRegistrationSuccess = (data: { cpf: string; birthDate: string; userProfile: GoogleUserProfile }) => {
+    setRegisteredUser({
+      name: data.userProfile.fullName,
+      cpf: data.cpf,
+    });
+    setGoogleProfile(null);
+    setIsSuccess(true);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -224,8 +252,14 @@ export const ProLoginScreen: React.FC<ProLoginScreenProps> = ({
                   <div className="p-3.5 bg-[#08080A] rounded-xl border border-white/[0.08] text-xs text-left text-white/90 space-y-1.5">
                     <div className="flex justify-between text-[11px] text-[#9FA1AC]">
                       <span>Treinador conectado:</span>
-                      <strong className="text-white">{identifier || 'Prof. Felipe (Coach)'}</strong>
+                      <strong className="text-white">{registeredUser?.name || identifier || 'Prof. Felipe (Coach)'}</strong>
                     </div>
+                    {registeredUser?.cpf && (
+                      <div className="flex justify-between text-[11px] text-[#9FA1AC]">
+                        <span>CPF Validado (Receita):</span>
+                        <strong className="text-[#C6FF00]">•••.{registeredUser.cpf.slice(3, 6)}.{registeredUser.cpf.slice(6, 9)}-••</strong>
+                      </div>
+                    )}
                     <div className="flex justify-between text-[11px] text-[#9FA1AC]">
                       <span>Ambiente:</span>
                       <strong className="text-[#C6FF00]">O Domo FIT Pro Dashboard</strong>
@@ -256,6 +290,13 @@ export const ProLoginScreen: React.FC<ProLoginScreenProps> = ({
                     </button>
                   </div>
                 </div>
+              ) : googleProfile ? (
+                /* Etapa 2: Confirmação de CPF e Validação de Idade (Receita Federal) */
+                <GoogleCpfCompletionStep
+                  userProfile={googleProfile}
+                  onCancel={() => setGoogleProfile(null)}
+                  onSuccess={handleGoogleRegistrationSuccess}
+                />
               ) : showForgotPassword ? (
                 /* Formulário de Esqueci a Senha */
                 <div className="animate-fadeIn">
@@ -482,7 +523,7 @@ export const ProLoginScreen: React.FC<ProLoginScreenProps> = ({
                   <div className="mt-5 pt-4 border-t border-white/[0.08] space-y-2.5">
                     <button
                       type="button"
-                      onClick={handleQuickDemoLogin}
+                      onClick={handleStartGoogleAuth}
                       className="w-full py-2.5 px-4 rounded-xl bg-[#08080A] hover:bg-white/[0.04] border border-white/10 hover:border-white/20 text-xs font-medium text-white flex items-center justify-center gap-2.5 transition-colors cursor-pointer"
                     >
                       <svg className="w-4 h-4" viewBox="0 0 24 24">
