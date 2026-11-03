@@ -1,6 +1,6 @@
 /**
- * Utilitários Oficiais de Validação e Formatação de CPF e Idade (Receita Federal)
- * O Domo FIT — Compliance de Cadastro e Proteção Legal
+ * Utilitários Oficiais de Validação e Formatação de CPF, Idade e Nome (Receita Federal)
+ * O Domo FIT — Compliance de Cadastro, Proteção Legal e Prevenção a Fraudes
  */
 
 /**
@@ -87,6 +87,91 @@ export function isAtLeast18(birthDateString: string): boolean {
 }
 
 /**
+ * Normaliza um nome removendo acentos, pontuações e excesso de espaços
+ */
+export function normalizeName(name: string): string {
+  if (!name) return '';
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z\s]/g, '')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * Extrai os tokens significativos de um nome (ignora preposições brasileiras como DE, DA, DO, DOS, DAS, E)
+ */
+export function getNameTokens(name: string): string[] {
+  const normalized = normalizeName(name);
+  if (!normalized) return [];
+  const stopWords = new Set(['DE', 'DA', 'DO', 'DOS', 'DAS', 'E']);
+  return normalized.split(' ').filter((t) => t.length > 0 && !stopWords.has(t));
+}
+
+/**
+ * Valida se o nome informado para o CPF é equivalente ao nome da conta Google conectada.
+ * Evita que o usuário use CPF de terceiros (ex: pais, cônjuge ou desconhecidos).
+ */
+export function validateNameEquivalence(
+  googleName: string,
+  cpfName: string
+): { isEquivalent: boolean; reason?: string } {
+  const tGoogle = getNameTokens(googleName);
+  const tCpf = getNameTokens(cpfName);
+
+  if (tGoogle.length === 0 || tCpf.length === 0) {
+    return {
+      isEquivalent: false,
+      reason: 'Por favor, informe o nome completo para verificação.',
+    };
+  }
+
+  const firstG = tGoogle[0];
+  const lastG = tGoogle[tGoogle.length - 1];
+  const firstC = tCpf[0];
+  const lastC = tCpf[tCpf.length - 1];
+
+  // 1. Checa se o primeiro nome coincide (ou é apelido/prefixo de ao menos 3 letras)
+  const firstMatches =
+    firstG === firstC ||
+    (firstG.length >= 3 && firstC.startsWith(firstG)) ||
+    (firstC.length >= 3 && firstG.startsWith(firstC));
+
+  const commonTokens = tGoogle.filter((t) => tCpf.includes(t));
+
+  if (!firstMatches && commonTokens.length === 0) {
+    return {
+      isEquivalent: false,
+      reason: `O primeiro nome ('${firstC.charAt(0) + firstC.slice(1).toLowerCase()}') não corresponde ao titular da conta conectada ('${firstG.charAt(0) + firstG.slice(1).toLowerCase()}').`,
+    };
+  }
+
+  // Se primeiro nome bate e o último sobrenome bate ou está presente
+  if (firstMatches && (lastG === lastC || tCpf.includes(lastG) || tGoogle.includes(lastC))) {
+    return { isEquivalent: true };
+  }
+
+  // Se um nome é subconjunto do outro (ex: 'Arthur Lamonica' vs 'Arthur Jose Lamonica')
+  const isSubset =
+    tGoogle.every((t) => tCpf.includes(t)) || tCpf.every((t) => tGoogle.includes(t));
+  if (isSubset) {
+    return { isEquivalent: true };
+  }
+
+  // Se possui 2 ou mais nomes/sobrenomes idênticos
+  if (commonTokens.length >= 2) {
+    return { isEquivalent: true };
+  }
+
+  return {
+    isEquivalent: false,
+    reason: `O nome informado no CPF não é equivalente ao titular da conta conectada ('${googleName}'). O CPF deve pertencer à mesma pessoa.`,
+  };
+}
+
+/**
  * Interface de consulta / validação da Receita Federal
  */
 export interface ReceitaValidationResult {
@@ -103,7 +188,9 @@ export interface ReceitaValidationResult {
  */
 export async function verifyReceitaFederalCPF(
   cpf: string,
-  birthDate: string
+  birthDate: string,
+  cpfName?: string,
+  googleName?: string
 ): Promise<ReceitaValidationResult> {
   const clean = cleanCPF(cpf);
 
@@ -112,7 +199,7 @@ export async function verifyReceitaFederalCPF(
     return {
       valid: false,
       isAdult: false,
-      errorMessage: 'CPF inválido. Por favor, confira os números digitados.'
+      errorMessage: 'CPF inválido. Por favor, confira os números digitados.',
     };
   }
 
@@ -121,7 +208,7 @@ export async function verifyReceitaFederalCPF(
     return {
       valid: false,
       isAdult: false,
-      errorMessage: 'Data de nascimento é obrigatória para verificação na Receita Federal.'
+      errorMessage: 'Data de nascimento é obrigatória para verificação na Receita Federal.',
     };
   }
 
@@ -131,14 +218,27 @@ export async function verifyReceitaFederalCPF(
       valid: false,
       isAdult: false,
       age,
-      errorMessage: `Cadastro não permitido: o usuário possui ${age} ano(s). É obrigatório ter ao menos 18 anos completos para utilizar o O Domo FIT.`
+      errorMessage: `Cadastro não permitido: o usuário possui ${age} ano(s). É obrigatório ter ao menos 18 anos completos para utilizar o O Domo FIT.`,
     };
+  }
+
+  // 3. Validação de Equivalência de Nome
+  if (cpfName && googleName) {
+    const nameCheck = validateNameEquivalence(googleName, cpfName);
+    if (!nameCheck.isEquivalent) {
+      return {
+        valid: false,
+        isAdult: true,
+        age,
+        errorMessage: nameCheck.reason,
+      };
+    }
   }
 
   return {
     valid: true,
     isAdult: true,
     age,
-    errorMessage: undefined
+    errorMessage: undefined,
   };
 }

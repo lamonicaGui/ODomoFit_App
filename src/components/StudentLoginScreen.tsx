@@ -15,7 +15,8 @@ import {
   ShieldCheck, 
   AlertCircle
 } from 'lucide-react';
-import { GoogleCpfCompletionStep, type GoogleUserProfile } from './GoogleCpfCompletionStep';
+import { GoogleCpfCompletionStep } from './GoogleCpfCompletionStep';
+import { triggerGoogleOAuthPopup, type GoogleUserProfile } from '../services/googleAuth';
 
 interface StudentLoginScreenProps {
   isOpen: boolean;
@@ -48,22 +49,27 @@ export const StudentLoginScreen: React.FC<StudentLoginScreenProps> = ({
   const handleStartGoogleAuth = () => {
     setIsLoading(true);
     setErrorMessage('');
-    setTimeout(() => {
-      setIsLoading(false);
-      // Simula o retorno inicial do Google OAuth (sem CPF)
-      setGoogleProfile({
-        googleId: 'google-aluno-' + Math.random().toString(36).substring(2, 9),
-        email: 'camila.lima@gmail.com',
-        fullName: 'Camila Lima',
-        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
-        role: 'student',
-      });
-    }, 600);
+    triggerGoogleOAuthPopup(
+      'student',
+      (profile) => {
+        setIsLoading(false);
+        setGoogleProfile(profile);
+      },
+      (errorMsg) => {
+        setIsLoading(false);
+        setErrorMessage(errorMsg);
+      }
+    );
   };
 
-  const handleGoogleRegistrationSuccess = (data: { cpf: string; birthDate: string; userProfile: GoogleUserProfile }) => {
+  const handleGoogleRegistrationSuccess = (data: { 
+    cpf: string; 
+    birthDate: string; 
+    fullName: string;
+    userProfile: GoogleUserProfile 
+  }) => {
     setRegisteredUser({
-      name: data.userProfile.fullName,
+      name: data.fullName || data.userProfile.fullName,
       cpf: data.cpf,
     });
     setGoogleProfile(null);
@@ -291,10 +297,11 @@ export const StudentLoginScreen: React.FC<StudentLoginScreenProps> = ({
                   </div>
                 </div>
               ) : googleProfile ? (
-                /* Etapa 2: Confirmação de CPF e Validação de Idade (Receita Federal) */
+                /* Etapa 2: Confirmação de CPF, Maioridade e Equivalência de Nome (Receita Federal) */
                 <GoogleCpfCompletionStep
                   userProfile={googleProfile}
                   onCancel={() => setGoogleProfile(null)}
+                  onSwitchAccount={handleStartGoogleAuth}
                   onSuccess={handleGoogleRegistrationSuccess}
                 />
               ) : showForgotPassword ? (
