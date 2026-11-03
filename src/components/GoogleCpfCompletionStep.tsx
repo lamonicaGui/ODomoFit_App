@@ -111,15 +111,24 @@ export const GoogleCpfCompletionStep: React.FC<GoogleCpfCompletionStepProps> = (
 
     setIsLoading(true);
 
-    setTimeout(() => {
-      setIsLoading(false);
-
-      // Simulação de proteção de CPF duplicado
-      if (clean === '00000000191') {
-        setErrorMessage('Este CPF já está cadastrado em outra conta ativa no O Domo FIT. Não é possível criar uma nova conta com este documento.');
-        return;
+    (async () => {
+      try {
+        const checkResp = await fetch('https://api.odomofit.com.br/api/auth/check-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cpf: clean })
+        });
+        const checkData = await checkResp.json();
+        if (checkData.exists) {
+          setIsLoading(false);
+          setErrorMessage('Este CPF já está cadastrado em outra conta ativa no O Domo FIT. Não é possível criar uma nova conta com este documento.');
+          return;
+        }
+      } catch (err) {
+        console.warn('API check-user erro:', err);
       }
 
+      setIsLoading(false);
       onSuccess({
         cpf: clean,
         birthDate,
@@ -129,7 +138,7 @@ export const GoogleCpfCompletionStep: React.FC<GoogleCpfCompletionStepProps> = (
           fullName: fullName.trim(),
         },
       });
-    }, 700);
+    })();
   };
 
   const isFormValid = isCpfValid && isAdult && nameCheck.isEquivalent;

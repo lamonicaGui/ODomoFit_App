@@ -51,7 +51,50 @@ export const StudentLoginScreen: React.FC<StudentLoginScreenProps> = ({
     setErrorMessage('');
     triggerGoogleOAuthPopup(
       'student',
-      (profile) => {
+      async (profile) => {
+        try {
+          const resp = await fetch('https://api.odomofit.com.br/api/auth/google-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              google_id: profile.googleId || profile.email,
+              email: profile.email
+            })
+          });
+          const result = await resp.json();
+          if (result.registered && result.user) {
+            const userSession = {
+              id: result.user.id,
+              name: result.user.full_name,
+              email: result.user.email,
+              username: result.user.username || ('@' + (result.user.email ? result.user.email.split('@')[0] : 'atleta')),
+              avatarUrl: result.user.avatar_url || profile.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+              bio: result.user.bio || '',
+              followersCount: 0,
+              followingCount: 0,
+              prsCount: 0,
+              streakDays: 1,
+              hasNutritionPlan: false,
+              assignedTrainerName: '',
+              assignedNutritionistName: '',
+              authMethod: 'google',
+              isNewUser: false
+            };
+            try {
+              localStorage.setItem('odomo_current_user', JSON.stringify(userSession));
+            } catch (e) {}
+
+            setIsLoading(false);
+            setIsSuccess(true);
+            setTimeout(() => {
+              window.location.href = './aluno/';
+            }, 1000);
+            return;
+          }
+        } catch (err) {
+          console.warn('API check fallback:', err);
+        }
+
         setIsLoading(false);
         setGoogleProfile(profile);
       },
@@ -62,30 +105,63 @@ export const StudentLoginScreen: React.FC<StudentLoginScreenProps> = ({
     );
   };
 
-  const handleGoogleRegistrationSuccess = (data: { 
+  const handleGoogleRegistrationSuccess = async (data: { 
     cpf: string; 
     birthDate: string; 
     fullName: string;
     userProfile: GoogleUserProfile 
   }) => {
+    setIsLoading(true);
+    setErrorMessage('');
     const finalName = data.fullName || data.userProfile.fullName;
     const emailPrefix = data.userProfile.email ? data.userProfile.email.split('@')[0] : 'atleta';
     const cleanUsername = '@' + emailPrefix.toLowerCase().replace(/[^a-z0-9._]/g, '');
 
+    let savedUserId = 'usr_g_' + Date.now();
+
+    try {
+      const resp = await fetch('https://api.odomofit.com.br/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: finalName,
+          email: data.userProfile.email,
+          cpf: data.cpf,
+          birth_date: data.birthDate,
+          role: 'student',
+          google_id: data.userProfile.googleId || data.userProfile.email,
+          avatar_url: data.userProfile.avatarUrl || '',
+          username: cleanUsername
+        })
+      });
+
+      const resData = await resp.json();
+      if (!resp.ok) {
+        setIsLoading(false);
+        setErrorMessage(resData.detail || 'Não foi possível concluir o cadastro.');
+        return;
+      }
+      if (resData.user && resData.user.id) {
+        savedUserId = resData.user.id;
+      }
+    } catch (e) {
+      console.warn('Registro offline/fallback:', e);
+    }
+
     const googleUserSession = {
-      id: `usr_g_${Date.now()}`,
+      id: savedUserId,
       name: finalName,
       email: data.userProfile.email,
       username: cleanUsername,
       avatarUrl: data.userProfile.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-      bio: 'Atleta O Domo FIT 🏛️ • Foco e alta consistência.',
+      bio: '',
       followersCount: 0,
       followingCount: 0,
       prsCount: 0,
       streakDays: 1,
-      hasNutritionPlan: true,
-      assignedTrainerName: 'Dr. Rodrigo Menezes (CREF 048291-G/SP)',
-      assignedNutritionistName: 'Dra. Beatriz Lima (CRN-3 48192)',
+      hasNutritionPlan: false,
+      assignedTrainerName: '',
+      assignedNutritionistName: '',
       authMethod: 'google',
       isNewUser: true
     };
@@ -100,6 +176,7 @@ export const StudentLoginScreen: React.FC<StudentLoginScreenProps> = ({
       cpf: data.cpf,
     });
     setGoogleProfile(null);
+    setIsLoading(false);
     setIsSuccess(true);
     setTimeout(() => {
       window.location.href = './aluno/';
