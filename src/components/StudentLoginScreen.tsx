@@ -74,6 +74,9 @@ export const StudentLoginScreen: React.FC<StudentLoginScreenProps> = ({
     });
     setGoogleProfile(null);
     setIsSuccess(true);
+    setTimeout(() => {
+      window.location.href = './aluno/';
+    }, 1200);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -93,6 +96,9 @@ export const StudentLoginScreen: React.FC<StudentLoginScreenProps> = ({
     setTimeout(() => {
       setIsLoading(false);
       setIsSuccess(true);
+      setTimeout(() => {
+        window.location.href = './aluno/';
+      }, 1200);
     }, 800);
   };
 
@@ -104,6 +110,9 @@ export const StudentLoginScreen: React.FC<StudentLoginScreenProps> = ({
     setTimeout(() => {
       setIsLoading(false);
       setIsSuccess(true);
+      setTimeout(() => {
+        window.location.href = './aluno/';
+      }, 1000);
     }, 600);
   };
 
@@ -275,12 +284,11 @@ export const StudentLoginScreen: React.FC<StudentLoginScreenProps> = ({
                   <div className="pt-2 flex flex-col gap-2.5">
                     <button
                       onClick={() => {
-                        window.location.href = '/#treinadores';
-                        onClose();
+                        window.location.href = './aluno/';
                       }}
                       className="w-full py-3 rounded-xl bg-[#C6FF00] hover:bg-[#B2E600] text-[#08080A] font-extrabold text-xs tracking-wider uppercase transition-all duration-200 cursor-pointer shadow-[0_4px_16px_rgba(198,255,0,0.3)] flex items-center justify-center gap-2"
                     >
-                      <span>Acessar Meus Treinos</span>
+                      <span>Acessar Portal do Aluno</span>
                       <ArrowRight className="w-4 h-4" />
                     </button>
 

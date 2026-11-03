@@ -74,6 +74,9 @@ export const ProLoginScreen: React.FC<ProLoginScreenProps> = ({
     });
     setGoogleProfile(null);
     setIsSuccess(true);
+    setTimeout(() => {
+      window.location.href = './pro/';
+    }, 1200);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -93,6 +96,9 @@ export const ProLoginScreen: React.FC<ProLoginScreenProps> = ({
     setTimeout(() => {
       setIsLoading(false);
       setIsSuccess(true);
+      setTimeout(() => {
+        window.location.href = './pro/';
+      }, 1200);
     }, 800);
   };
 
@@ -104,6 +110,9 @@ export const ProLoginScreen: React.FC<ProLoginScreenProps> = ({
     setTimeout(() => {
       setIsLoading(false);
       setIsSuccess(true);
+      setTimeout(() => {
+        window.location.href = './pro/';
+      }, 1000);
     }, 600);
   };
 
@@ -275,12 +284,11 @@ export const ProLoginScreen: React.FC<ProLoginScreenProps> = ({
                   <div className="pt-2 flex flex-col gap-2.5">
                     <button
                       onClick={() => {
-                        window.location.href = '/#treinadores';
-                        onClose();
+                        window.location.href = './pro/';
                       }}
                       className="w-full py-3 rounded-xl bg-[#C6FF00] hover:bg-[#B2E600] text-[#08080A] font-extrabold text-xs tracking-wider uppercase transition-all duration-200 cursor-pointer shadow-[0_4px_16px_rgba(198,255,0,0.3)] flex items-center justify-center gap-2"
                     >
-                      <span>Abrir Painel da Consultoria</span>
+                      <span>Abrir Portal do Profissional</span>
                       <ArrowRight className="w-4 h-4" />
                     </button>
 

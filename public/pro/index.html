@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="./domofit-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DomoFit® PRO — Ecossistema de Performance &amp; Saúde</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,600;1,700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Pre-compiled CSS fallback so opening index.html directly via file:// works immediately -->
+    <script>
+      if (window.location.protocol === 'file:') {
+        var l = document.createElement('link');
+        l.rel = 'stylesheet';
+        l.href = './dist/assets/app.css';
+        document.head.appendChild(l);
+      }
+    </script>
+    <script type="module" crossorigin src="./assets/app.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/app.css">
+  </head>
+  <body style="background-color: #1e1e1e; color: #F4F7F0; margin: 0;" class="bg-[#1e1e1e] text-[#F4F7F0] antialiased selection:bg-[#bdf900] selection:text-[#1e1e1e]">
+    <!-- Global Cinematic Noise Overlay (SKILL: GEMINI-Construtor-de-Sites) -->
+    <svg
+      style="position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50; opacity: 0.045;"
+      class="pointer-events-none fixed inset-0 z-50 h-full w-full opacity-[0.045]"
+      aria-hidden="true"
+    >
+      <filter id="domofit-noise-filter">
+        <feTurbulence type="fractalNoise" baseFrequency="0.82" numOctaves="4" stitchTiles="stitch" />
+      </filter>
+      <rect width="100%" height="100%" filter="url(#domofit-noise-filter)" />
+    </svg>
+    <div id="root"></div>
+    <script>
+      if (window.location.protocol === 'file:') {
+        var s = document.createElement('script');
+        s.src = './dist/assets/app.js';
+        s.defer = true;
+        document.body.appendChild(s);
+      }
+    </script>
+  </body>
+</html>
