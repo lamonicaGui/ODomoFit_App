@@ -15,7 +15,7 @@ import {
   ShieldCheck, 
   AlertCircle
 } from 'lucide-react';
-import { GoogleCpfCompletionStep } from './GoogleCpfCompletionStep';
+import { GoogleCpfCompletionStep, type RegistrationSuccessData } from './GoogleCpfCompletionStep';
 import { triggerGoogleOAuthPopup, type GoogleUserProfile } from '../services/googleAuth';
 
 interface StudentLoginScreenProps {
@@ -105,17 +105,11 @@ export const StudentLoginScreen: React.FC<StudentLoginScreenProps> = ({
     );
   };
 
-  const handleGoogleRegistrationSuccess = async (data: { 
-    cpf: string; 
-    birthDate: string; 
-    fullName: string;
-    userProfile: GoogleUserProfile 
-  }) => {
+  const handleGoogleRegistrationSuccess = async (data: RegistrationSuccessData) => {
     setIsLoading(true);
     setErrorMessage('');
     const finalName = data.fullName || data.userProfile.fullName;
-    const emailPrefix = data.userProfile.email ? data.userProfile.email.split('@')[0] : 'atleta';
-    const cleanUsername = '@' + emailPrefix.toLowerCase().replace(/[^a-z0-9._]/g, '');
+    const cleanUsername = data.username ? data.username : ('@' + (data.userProfile.email ? data.userProfile.email.split('@')[0] : 'atleta').toLowerCase().replace(/[^a-z0-9._]/g, ''));
 
     let savedUserId = 'usr_g_' + Date.now();
 

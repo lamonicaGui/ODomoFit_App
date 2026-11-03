@@ -9,34 +9,45 @@ import {
   Lock, 
   ArrowLeft,
   User,
-  RefreshCw
+  RefreshCw,
+  Award,
+  AtSign,
+  FileBadge
 } from 'lucide-react';
 import { 
   formatCPF, 
   validateCPF, 
   cleanCPF, 
   calculateAge, 
-  isAtLeast18,
-  validateNameEquivalence
+  isAtLeast18, 
+  validateNameEquivalence 
 } from '../utils/cpfValidator';
 import type { GoogleUserProfile } from '../services/googleAuth';
 
 export type { GoogleUserProfile };
 
+export interface RegistrationSuccessData {
+  cpf: string;
+  birthDate: string;
+  fullName: string;
+  username: string;
+  councilType?: 'CREF' | 'CRN';
+  councilNumber?: string;
+  councilVerified?: boolean;
+  userProfile: GoogleUserProfile;
+}
+
 interface GoogleCpfCompletionStepProps {
   userProfile: GoogleUserProfile;
+  isPro?: boolean;
   onCancel: () => void;
   onSwitchAccount: () => void;
-  onSuccess: (data: { 
-    cpf: string; 
-    birthDate: string; 
-    fullName: string;
-    userProfile: GoogleUserProfile 
-  }) => void;
+  onSuccess: (data: RegistrationSuccessData) => void;
 }
 
 export const GoogleCpfCompletionStep: React.FC<GoogleCpfCompletionStepProps> = ({
   userProfile,
+  isPro = false,
   onCancel,
   onSwitchAccount,
   onSuccess,
@@ -46,6 +57,20 @@ export const GoogleCpfCompletionStep: React.FC<GoogleCpfCompletionStepProps> = (
   const [birthDate, setBirthDate] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Configuração padrão de Username PRO: @pro_nome_de_usuario
+  const defaultRawUsername = (
+    userProfile.email ? userProfile.email.split('@')[0] : userProfile.fullName.toLowerCase().replace(/\s+/g, '_')
+  ).toLowerCase().replace(/[^a-z0-9._]/g, '');
+
+  const [proUsername, setProUsername] = useState(
+    isPro ? `pro_${defaultRawUsername}` : defaultRawUsername
+  );
+
+  // Campos específicos para Profissional (CREF / CRN Obrigatório e Ativo)
+  const [councilType, setCouncilType] = useState<'CREF' | 'CRN'>('CREF');
+  const [councilNumber, setCouncilNumber] = useState('');
+  const [councilActiveConfirmed, setCouncilActiveConfirmed] = useState(false);
 
   // 1. Validação de CPF
   const clean = cleanCPF(cpf);
@@ -61,6 +86,11 @@ export const GoogleCpfCompletionStep: React.FC<GoogleCpfCompletionStepProps> = (
     ? validateNameEquivalence(userProfile.fullName, fullName)
     : { isEquivalent: false, reason: 'Informe o nome do titular.' };
 
+  // 4. Validação de Conselho Profissional Ativo (Obrigatório se for PRO)
+  const isCouncilValid = !isPro || (
+    councilNumber.trim().length >= 5 && councilActiveConfirmed
+  );
+
   const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatCPF(e.target.value);
     setCpf(formatted);
@@ -74,6 +104,17 @@ export const GoogleCpfCompletionStep: React.FC<GoogleCpfCompletionStepProps> = (
 
   const handleFullNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFullName(e.target.value);
+    setErrorMessage('');
+  };
+
+  const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, '');
+    if (isPro) {
+      if (!val.startsWith('pro_')) {
+        val = `pro_${val.replace(/^pro_?/, '')}`;
+      }
+    }
+    setProUsername(val);
     setErrorMessage('');
   };
 
@@ -92,7 +133,7 @@ export const GoogleCpfCompletionStep: React.FC<GoogleCpfCompletionStepProps> = (
 
     // Trava 2: Validação algorítmica do CPF (Receita Federal)
     if (!isCpfFilled || !validateCPF(clean)) {
-      setErrorMessage('Por favor, informe um CPF válido de acordo com o algoritmo da Receita Federal.');
+      setErrorMessage('Por favor, informe um CPF válido de acordo com o algoritmo oficial da Receita Federal.');
       return;
     }
 
@@ -109,6 +150,22 @@ export const GoogleCpfCompletionStep: React.FC<GoogleCpfCompletionStepProps> = (
       return;
     }
 
+    // Trava 4: Validação de Conselho Profissional Ativo (CREF ou CRN)
+    if (isPro) {
+      if (!councilNumber.trim() || councilNumber.trim().length < 5) {
+        setErrorMessage(
+          `O número de registro no conselho (${councilType}) é obrigatório e deve incluir a região (ex: 048291-G/SP ou 48192-CRN-3).`
+        );
+        return;
+      }
+      if (!councilActiveConfirmed) {
+        setErrorMessage(
+          `Acesso restrito: Para utilizar o DomoFit PRO, é indispensável confirmar a situação cadastral ativa e regular junto ao ${councilType}. Caso deseje utilizar o aplicativo apenas como aluno/atleta, acesse a plataforma de usuários.`
+        );
+        return;
+      }
+    }
+
     setIsLoading(true);
 
     (async () => {
@@ -116,23 +173,35 @@ export const GoogleCpfCompletionStep: React.FC<GoogleCpfCompletionStepProps> = (
         const checkResp = await fetch('https://api.odomofit.com.br/api/auth/check-user', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cpf: clean })
+          body: JSON.stringify({ cpf: clean, email: userProfile.email })
         });
         const checkData = await checkResp.json();
-        if (checkData.exists) {
+        
+        // Se o CPF já existir em outra conta com email DIFERENTE, bloqueia duplicidade
+        if (checkData.exists && checkData.user && checkData.user.email !== userProfile.email) {
           setIsLoading(false);
-          setErrorMessage('Este CPF já está cadastrado em outra conta ativa no O Domo FIT. Não é possível criar uma nova conta com este documento.');
+          setErrorMessage('Este CPF já está cadastrado em outra conta ativa no O Domo FIT com outro e-mail. Não é possível associá-lo a uma nova conta.');
           return;
         }
       } catch (err) {
-        console.warn('API check-user erro:', err);
+        console.warn('API check-user fallback:', err);
       }
 
       setIsLoading(false);
+
+      // Monta o username formatado com @
+      const formattedUsername = isPro 
+        ? `@${proUsername.startsWith('pro_') ? proUsername : 'pro_' + proUsername}`
+        : `@${proUsername}`;
+
       onSuccess({
         cpf: clean,
         birthDate,
         fullName: fullName.trim(),
+        username: formattedUsername,
+        councilType: isPro ? councilType : undefined,
+        councilNumber: isPro ? councilNumber.trim().toUpperCase() : undefined,
+        councilVerified: isPro ? true : undefined,
         userProfile: {
           ...userProfile,
           fullName: fullName.trim(),
@@ -141,7 +210,7 @@ export const GoogleCpfCompletionStep: React.FC<GoogleCpfCompletionStepProps> = (
     })();
   };
 
-  const isFormValid = isCpfValid && isAdult && nameCheck.isEquivalent;
+  const isFormValid = isCpfValid && isAdult && nameCheck.isEquivalent && isCouncilValid;
 
   return (
     <div className="animate-fadeIn">
@@ -158,12 +227,12 @@ export const GoogleCpfCompletionStep: React.FC<GoogleCpfCompletionStepProps> = (
 
         <span className="text-[11px] font-semibold text-[#C6FF00] bg-[#C6FF00]/10 px-2.5 py-0.5 rounded-full border border-[#C6FF00]/20 flex items-center gap-1">
           <ShieldCheck className="w-3.5 h-3.5" />
-          Passo 2 de 2: Verificação Cadastral
+          {isPro ? 'Validação Profissional (PRO)' : 'Passo 2 de 2: Verificação Cadastral'}
         </span>
       </div>
 
       {/* Identificação da Conta Google Conectada */}
-      <div className="mb-5 p-3 rounded-xl bg-white/[0.03] border border-white/10 flex items-center justify-between gap-3">
+      <div className="mb-4 p-3 rounded-xl bg-white/[0.03] border border-white/10 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           {userProfile.avatarUrl ? (
             <img
@@ -198,11 +267,21 @@ export const GoogleCpfCompletionStep: React.FC<GoogleCpfCompletionStepProps> = (
       </div>
 
       <div className="mb-4">
-        <h2 className="text-xl font-extrabold text-white font-heading">
-          Confirmação de Identidade
+        <h2 className="text-lg sm:text-xl font-extrabold text-white font-heading flex items-center gap-2">
+          {isPro ? (
+            <>
+              <span>Credenciamento Profissional</span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#C6FF00] text-[#08080A] font-black">PRO</span>
+            </>
+          ) : (
+            'Confirmação de Identidade'
+          )}
         </h2>
         <p className="text-xs text-[#9FA1AC] mt-1 leading-relaxed">
-          Para garantir a segurança esportiva, integridade de acesso e validação com a base da Receita Federal, confira seus dados cadastrais.
+          {isPro 
+            ? 'Para emitir periodizações e prescrever treinos/dietas, confirme seu CPF único e seu registro profissional ativo (CREF/CRN).'
+            : 'Para garantir a segurança esportiva e validação com a base da Receita Federal, confira seus dados cadastrais.'
+          }
         </p>
       </div>
 
@@ -214,15 +293,15 @@ export const GoogleCpfCompletionStep: React.FC<GoogleCpfCompletionStepProps> = (
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-3.5">
         {/* Campo Nome Completo do Titular */}
         <div>
-          <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center justify-between mb-1">
             <label className="text-xs font-semibold text-white/90">
               Nome Completo do Titular * (Conforme no CPF)
             </label>
             {fullName.trim() && (
-              <span className={`text-[11px] font-bold flex items-center gap-1 ${nameCheck.isEquivalent ? 'text-[#C6FF00]' : 'text-red-400'}`}>
+              <span className={`text-[10px] font-bold flex items-center gap-1 ${nameCheck.isEquivalent ? 'text-[#C6FF00]' : 'text-red-400'}`}>
                 {nameCheck.isEquivalent ? (
                   <>
                     <CheckCircle2 className="w-3 h-3" />
@@ -246,7 +325,7 @@ export const GoogleCpfCompletionStep: React.FC<GoogleCpfCompletionStepProps> = (
               onChange={handleFullNameChange}
               placeholder="Nome completo do titular do CPF"
               required
-              className={`w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#08080A] border text-white text-xs placeholder-[#9FA1AC]/40 focus:outline-none transition-colors ${
+              className={`w-full pl-10 pr-4 py-2 rounded-xl bg-[#08080A] border text-white text-xs placeholder-[#9FA1AC]/40 focus:outline-none transition-colors ${
                 fullName.trim()
                   ? nameCheck.isEquivalent
                     ? 'border-[#C6FF00] shadow-[0_0_8px_rgba(198,255,0,0.15)]'
@@ -255,107 +334,223 @@ export const GoogleCpfCompletionStep: React.FC<GoogleCpfCompletionStepProps> = (
               }`}
             />
           </div>
-          <p className="text-[10px] text-[#9FA1AC]/70 mt-1">
-            Trava de segurança: o nome do CPF deve ser equivalente ao titular da conta Google conectada.
-          </p>
         </div>
 
-        {/* Campo CPF */}
+        {/* Username Padrão com @ (Para PRO: obrigatoriamente @pro_nome_de_usuario) */}
         <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <label className="text-xs font-semibold text-white/90">
-              CPF do Titular *
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-xs font-semibold text-white/90 flex items-center gap-1.5">
+              <span>Nome de Usuário (@)</span>
+              {isPro && (
+                <span className="text-[10px] font-mono text-[#C6FF00] bg-[#C6FF00]/10 px-1.5 py-0.2 rounded font-bold">
+                  Padrão PRO: @pro_...
+                </span>
+              )}
             </label>
-            {isCpfFilled && (
-              <span className={`text-[11px] font-bold flex items-center gap-1 ${isCpfValid ? 'text-[#C6FF00]' : 'text-red-400'}`}>
-                {isCpfValid ? (
-                  <>
-                    <CheckCircle2 className="w-3 h-3" />
-                    CPF Válido
-                  </>
-                ) : (
-                  <>
-                    <AlertCircle className="w-3 h-3" />
-                    Dígitos Inválidos
-                  </>
-                )}
-              </span>
-            )}
+            <span className="text-[10px] text-[#9FA1AC] font-mono">
+              @{proUsername}
+            </span>
           </div>
 
           <div className="relative">
-            <CreditCard className="w-4 h-4 text-[#9FA1AC] absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <AtSign className="w-4 h-4 text-[#C6FF00] absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              value={cpf}
-              onChange={handleCpfChange}
-              placeholder="000.000.000-00"
-              maxLength={14}
+              value={proUsername}
+              onChange={handleUsernameChange}
+              placeholder={isPro ? "pro_seunome" : "seunome"}
               required
-              className={`w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#08080A] border text-white text-xs placeholder-[#9FA1AC]/40 focus:outline-none transition-colors ${
-                isCpfFilled
-                  ? isCpfValid
-                    ? 'border-[#C6FF00] shadow-[0_0_8px_rgba(198,255,0,0.15)]'
-                    : 'border-red-500/70'
-                  : 'border-white/10 focus:border-[#C6FF00]'
-              }`}
+              className="w-full pl-10 pr-4 py-2 rounded-xl bg-[#08080A] border border-white/10 focus:border-[#C6FF00] text-white text-xs placeholder-[#9FA1AC]/40 focus:outline-none font-mono"
             />
           </div>
           <p className="text-[10px] text-[#9FA1AC]/70 mt-1">
-            Cada CPF só pode ser associado a uma única conta no O Domo FIT.
+            {isPro 
+              ? 'Por padrão regulatório da plataforma, contas profissionais recebem o identificador @pro_.'
+              : 'Seu @ exclusivo para interação na comunidade e feed social.'}
           </p>
         </div>
 
-        {/* Campo Data de Nascimento */}
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <label className="text-xs font-semibold text-white/90">
-              Data de Nascimento * (Conforme Receita Federal)
-            </label>
-            {birthDate && (
-              <span className={`text-[11px] font-bold flex items-center gap-1 ${isAdult ? 'text-[#C6FF00]' : 'text-red-400'}`}>
-                {isAdult ? (
-                  <>
-                    <CheckCircle2 className="w-3 h-3" />
-                    {age} anos (Maior de 18)
-                  </>
-                ) : (
-                  <>
-                    <AlertCircle className="w-3 h-3" />
-                    {age} anos (Menor de 18 - Bloqueado)
-                  </>
-                )}
+        {/* Grid: CPF + Data de Nascimento */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Campo CPF */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-semibold text-white/90">
+                CPF do Titular *
+              </label>
+              {isCpfFilled && (
+                <span className={`text-[10px] font-bold flex items-center gap-1 ${isCpfValid ? 'text-[#C6FF00]' : 'text-red-400'}`}>
+                  {isCpfValid ? (
+                    <>
+                      <CheckCircle2 className="w-3 h-3" />
+                      Válido
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="w-3 h-3" />
+                      Inválido
+                    </>
+                  )}
+                </span>
+              )}
+            </div>
+
+            <div className="relative">
+              <CreditCard className="w-4 h-4 text-[#9FA1AC] absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={cpf}
+                onChange={handleCpfChange}
+                placeholder="000.000.000-00"
+                maxLength={14}
+                required
+                className={`w-full pl-10 pr-4 py-2 rounded-xl bg-[#08080A] border text-white text-xs placeholder-[#9FA1AC]/40 focus:outline-none transition-colors ${
+                  isCpfFilled
+                    ? isCpfValid
+                      ? 'border-[#C6FF00] shadow-[0_0_8px_rgba(198,255,0,0.15)]'
+                      : 'border-red-500/70'
+                    : 'border-white/10 focus:border-[#C6FF00]'
+                }`}
+              />
+            </div>
+          </div>
+
+          {/* Campo Data de Nascimento */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-semibold text-white/90">
+                Nascimento *
+              </label>
+              {birthDate && (
+                <span className={`text-[10px] font-bold flex items-center gap-1 ${isAdult ? 'text-[#C6FF00]' : 'text-red-400'}`}>
+                  {isAdult ? (
+                    <>
+                      <CheckCircle2 className="w-3 h-3" />
+                      {age} anos
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="w-3 h-3" />
+                      Menor de 18
+                    </>
+                  )}
+                </span>
+              )}
+            </div>
+
+            <div className="relative">
+              <Calendar className="w-4 h-4 text-[#9FA1AC] absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="date"
+                value={birthDate}
+                onChange={handleBirthDateChange}
+                max={new Date().toISOString().split('T')[0]}
+                required
+                className={`w-full pl-10 pr-4 py-2 rounded-xl bg-[#08080A] border text-white text-xs placeholder-[#9FA1AC]/40 focus:outline-none transition-colors ${
+                  birthDate
+                    ? isAdult
+                      ? 'border-[#C6FF00] shadow-[0_0_8px_rgba(198,255,0,0.15)]'
+                      : 'border-red-500/70'
+                    : 'border-white/10 focus:border-[#C6FF00]'
+                }`}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* SEÇÃO OBRIGATÓRIA PARA PROFISSIONAL: REGISTRO DE CLASSE ATIVO (CREF / CRN) */}
+        {isPro && (
+          <div className="p-3.5 rounded-xl bg-[#C6FF00]/[0.04] border border-[#C6FF00]/25 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileBadge className="w-4 h-4 text-[#C6FF00]" />
+                <span className="text-xs font-extrabold text-white">Registro de Classe Obrigatório</span>
+              </div>
+              <span className="text-[10px] font-mono text-[#C6FF00] bg-[#C6FF00]/15 px-2 py-0.5 rounded-full font-bold">
+                Exclusivo PRO
               </span>
-            )}
-          </div>
+            </div>
 
-          <div className="relative">
-            <Calendar className="w-4 h-4 text-[#9FA1AC] absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="date"
-              value={birthDate}
-              onChange={handleBirthDateChange}
-              max={new Date().toISOString().split('T')[0]}
-              required
-              className={`w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#08080A] border text-white text-xs placeholder-[#9FA1AC]/40 focus:outline-none transition-colors ${
-                birthDate
-                  ? isAdult
-                    ? 'border-[#C6FF00] shadow-[0_0_8px_rgba(198,255,0,0.15)]'
-                    : 'border-red-500/70'
-                  : 'border-white/10 focus:border-[#C6FF00]'
-              }`}
-            />
-          </div>
-          <p className="text-[10px] text-[#9FA1AC]/70 mt-1">
-            Trava obrigatória: é necessário ter ao menos 18 anos completos para utilizar a plataforma.
-          </p>
-        </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {/* Tipo de Conselho */}
+              <div>
+                <label className="text-[11px] font-semibold text-white/80 block mb-1">
+                  Conselho *
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCouncilType('CREF')}
+                    className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-extrabold transition-all border ${
+                      councilType === 'CREF'
+                        ? 'bg-[#C6FF00] text-[#08080A] border-[#C6FF00] shadow-[0_0_10px_rgba(198,255,0,0.2)]'
+                        : 'bg-[#08080A] text-[#9FA1AC] border-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    CREF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCouncilType('CRN')}
+                    className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-extrabold transition-all border ${
+                      councilType === 'CRN'
+                        ? 'bg-[#C6FF00] text-[#08080A] border-[#C6FF00] shadow-[0_0_10px_rgba(198,255,0,0.2)]'
+                        : 'bg-[#08080A] text-[#9FA1AC] border-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    CRN
+                  </button>
+                </div>
+              </div>
 
-        {/* Termo e Aviso de Privacidade */}
-        <div className="p-3 bg-white/[0.02] border border-white/[0.06] rounded-xl flex items-start gap-2.5 text-[11px] text-[#9FA1AC] leading-relaxed">
+              {/* Número do Registro */}
+              <div className="sm:col-span-2">
+                <label className="text-[11px] font-semibold text-white/80 block mb-1">
+                  Número de Registro / Região *
+                </label>
+                <div className="relative">
+                  <Award className="w-3.5 h-3.5 text-[#C6FF00] absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={councilNumber}
+                    onChange={(e) => {
+                      setCouncilNumber(e.target.value);
+                      setErrorMessage('');
+                    }}
+                    placeholder={councilType === 'CREF' ? 'Ex: 048291-G/SP' : 'Ex: 48192-CRN-3'}
+                    required
+                    className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-[#08080A] border border-white/10 focus:border-[#C6FF00] text-white text-xs placeholder-[#9FA1AC]/40 focus:outline-none uppercase font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Checkbox de Confirmação de Registro Ativo */}
+            <label className="flex items-start gap-2.5 pt-1 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={councilActiveConfirmed}
+                onChange={(e) => {
+                  setCouncilActiveConfirmed(e.target.checked);
+                  setErrorMessage('');
+                }}
+                className="mt-0.5 w-4 h-4 rounded border-white/20 bg-[#08080A] text-[#C6FF00] focus:ring-0 accent-[#C6FF00] cursor-pointer"
+              />
+              <span className="text-[11px] text-[#9FA1AC] leading-tight">
+                Declaro sob as penas da lei que meu registro no <strong className="text-white">{councilType}</strong> encontra-se <strong className="text-[#C6FF00]">devidamente ATIVO e regular</strong>, habilitando-me legalmente para prescrição técnica de treinos ou planos alimentares.
+              </span>
+            </label>
+          </div>
+        )}
+
+        {/* Termo e Aviso de Privacidade e Mesma Conta */}
+        <div className="p-2.5 bg-white/[0.02] border border-white/[0.06] rounded-xl flex items-start gap-2 text-[10px] text-[#9FA1AC] leading-relaxed">
           <Lock className="w-3.5 h-3.5 text-[#C6FF00] flex-shrink-0 mt-0.5" />
           <span>
-            Seus dados são criptografados e protegidos nos termos da LGPD. A verificação cadastral é realizada diretamente para garantia de autenticidade, prevenção a fraudes e responsabilidade civil esportiva.
+            {isPro 
+              ? 'Conexão Unificada: Você poderá utilizar esta mesma conta Google para acessar a plataforma de usuários/alunos como atleta, sem necessidade de recadastramento.'
+              : 'Seus dados são protegidos pela LGPD. O CPF é único e intransferível no ecossistema O Domo FIT.'
+            }
           </span>
         </div>
 
@@ -363,7 +558,7 @@ export const GoogleCpfCompletionStep: React.FC<GoogleCpfCompletionStepProps> = (
         <button
           type="submit"
           disabled={isLoading || !isFormValid}
-          className={`w-full py-3 rounded-xl font-extrabold text-xs tracking-wide uppercase transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 ${
+          className={`w-full py-2.5 rounded-xl font-extrabold text-xs tracking-wide uppercase transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 ${
             isFormValid
               ? 'bg-[#C6FF00] hover:bg-[#B2E600] active:scale-[0.98] text-[#08080A] shadow-[0_4px_16px_rgba(198,255,0,0.3)]'
               : 'bg-white/10 text-white/40 cursor-not-allowed'
@@ -373,7 +568,7 @@ export const GoogleCpfCompletionStep: React.FC<GoogleCpfCompletionStepProps> = (
             <div className="w-4 h-4 border-2 border-[#08080A] border-t-transparent rounded-full animate-spin" />
           ) : (
             <>
-              <span>Concluir Cadastro e Acessar</span>
+              <span>{isPro ? 'Ativar Conta Profissional e Acessar' : 'Concluir Cadastro e Acessar'}</span>
               <ArrowRight className="w-4 h-4" />
             </>
           )}

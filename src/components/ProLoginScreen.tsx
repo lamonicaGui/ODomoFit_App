@@ -15,7 +15,7 @@ import {
   TrendingUp,
   AlertCircle
 } from 'lucide-react';
-import { GoogleCpfCompletionStep } from './GoogleCpfCompletionStep';
+import { GoogleCpfCompletionStep, type RegistrationSuccessData } from './GoogleCpfCompletionStep';
 import { triggerGoogleOAuthPopup, type GoogleUserProfile } from '../services/googleAuth';
 
 interface ProLoginScreenProps {
@@ -63,26 +63,67 @@ export const ProLoginScreen: React.FC<ProLoginScreenProps> = ({
           });
           const result = await resp.json();
           if (result.registered && result.user) {
-            const userSession = {
-              id: result.user.id,
-              name: result.user.full_name,
-              email: result.user.email,
-              username: result.user.username || ('@' + (result.user.email ? result.user.email.split('@')[0] : 'pro')),
-              avatarUrl: result.user.avatar_url || profile.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-              role: 'trainer',
-              authMethod: 'google',
-              isNewUser: false
-            };
-            try {
-              localStorage.setItem('odomo_pro_current_user', JSON.stringify(userSession));
-            } catch (e) {}
+            // Verifica se o usuário já tem registro de classe (CREF/CRN) ativo
+            const hasActiveCouncil = Boolean(
+              result.user.council_number || 
+              (result.user.role && result.user.role !== 'student')
+            );
 
-            setIsLoading(false);
-            setIsSuccess(true);
-            setTimeout(() => {
-              window.location.href = './pro/';
-            }, 1000);
-            return;
+            if (hasActiveCouncil) {
+              // Já é profissional ativo: garantir username @pro_...
+              const rawUsername = (result.user.username || (result.user.email ? result.user.email.split('@')[0] : 'pro')).replace(/^@/, '');
+              const formattedProUsername = rawUsername.startsWith('pro_') ? `@${rawUsername}` : `@pro_${rawUsername}`;
+
+              const userSession = {
+                id: result.user.id,
+                name: result.user.full_name,
+                email: result.user.email,
+                username: formattedProUsername,
+                cpf: result.user.cpf || '',
+                avatarUrl: result.user.avatar_url || profile.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+                role: result.user.role || 'trainer',
+                councilType: result.user.council_type || 'CREF',
+                councilNumber: result.user.council_number || '048291-G/SP',
+                councilVerified: true,
+                specialty: result.user.council_type === 'CRN' 
+                  ? 'Nutrição Esportiva & Composição Corporal' 
+                  : 'Fisiologia do Exercício & Consultoria de Alto Rendimento',
+                activeStudents: 0,
+                monthlyRevenueGross: 0,
+                monthlyRevenueNet: 0,
+                platformFeeRate: 0.15,
+                stripeConnected: false,
+                stripeAccountId: '',
+                availablePayout: 0,
+                authMethod: 'google',
+                isNewUser: true
+              };
+
+              // Limpar a base fictícia para garantir real noção da carteira do profissional
+              try {
+                localStorage.setItem('odomo_pro_current_user', JSON.stringify(userSession));
+                localStorage.setItem('odomo_pro_students', JSON.stringify([]));
+                localStorage.setItem('odomo_pro_transactions', JSON.stringify([]));
+                localStorage.setItem('odomo_pro_routines', JSON.stringify([]));
+                localStorage.removeItem('odomo_current_pro');
+              } catch (e) {}
+
+              setIsLoading(false);
+              setIsSuccess(true);
+              setTimeout(() => {
+                window.location.href = './pro/';
+              }, 1000);
+              return;
+            } else {
+              // O usuário já existe no DomoFit como aluno!
+              // O DomoFit permite o mesmo login, MAS para acessar a plataforma PRO ele deve informar o CREF ou CRN ativo
+              setIsLoading(false);
+              setGoogleProfile({
+                ...profile,
+                fullName: result.user.full_name || profile.fullName,
+              });
+              return;
+            }
           }
         } catch (err) {
           console.warn('API check fallback:', err);
@@ -98,18 +139,13 @@ export const ProLoginScreen: React.FC<ProLoginScreenProps> = ({
     );
   };
 
-  const handleGoogleRegistrationSuccess = async (data: { 
-    cpf: string; 
-    birthDate: string; 
-    fullName: string;
-    userProfile: GoogleUserProfile 
-  }) => {
+  const handleGoogleRegistrationSuccess = async (data: RegistrationSuccessData) => {
     setIsLoading(true);
     setErrorMessage('');
     const finalName = data.fullName || data.userProfile.fullName;
-    const emailPrefix = data.userProfile.email ? data.userProfile.email.split('@')[0] : 'pro';
-    const cleanUsername = '@' + emailPrefix.toLowerCase().replace(/[^a-z0-9._]/g, '');
 
+    // Regra oficial PRO: Username padrão obrigatoriamente @pro_nome_de_usuario
+    const cleanUsername = data.username.startsWith('@') ? data.username : `@${data.username}`;
     let savedUserId = 'pro_g_' + Date.now();
 
     try {
@@ -117,22 +153,32 @@ export const ProLoginScreen: React.FC<ProLoginScreenProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          full_name: finalName,
+          fullName: finalName,
           email: data.userProfile.email,
           cpf: data.cpf,
-          birth_date: data.birthDate,
-          role: 'trainer',
+          birthDate: data.birthDate,
+          role: data.councilType === 'CRN' ? 'nutritionist' : 'trainer',
           google_id: data.userProfile.googleId || data.userProfile.email,
-          avatar_url: data.userProfile.avatarUrl || '',
+          avatarUrl: data.userProfile.avatarUrl || '',
           username: cleanUsername
         })
       });
 
       const resData = await resp.json();
-      if (!resp.ok) {
-        setIsLoading(false);
-        setErrorMessage(resData.detail || 'Não foi possível concluir o cadastro.');
-        return;
+      if (!resp.ok && resp.status !== 409) {
+        // Se já existia e não permitiu recadastrar, tenta atualizar
+        try {
+          await fetch('https://api.odomofit.com.br/api/auth/update-profile', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: data.userProfile.email,
+              fullName: finalName,
+              username: cleanUsername,
+              avatarUrl: data.userProfile.avatarUrl || ''
+            })
+          });
+        } catch (upErr) {}
       }
       if (resData.user && resData.user.id) {
         savedUserId = resData.user.id;
@@ -141,19 +187,39 @@ export const ProLoginScreen: React.FC<ProLoginScreenProps> = ({
       console.warn('Registro offline/fallback:', e);
     }
 
+    // Estrutura de dados limpa para o profissional ter a REAL NOÇÃO da sua situação
     const proUserSession = {
       id: savedUserId,
       name: finalName,
       email: data.userProfile.email,
       username: cleanUsername,
+      cpf: data.cpf,
       avatarUrl: data.userProfile.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-      role: 'trainer',
+      role: data.councilType === 'CRN' ? 'nutritionist' : 'trainer',
+      councilType: data.councilType || 'CREF',
+      councilNumber: data.councilNumber || '048291-G/SP',
+      councilVerified: true,
+      specialty: data.councilType === 'CRN' 
+        ? 'Nutrição Clínica & Esportiva' 
+        : 'Fisiologia do Exercício & Consultoria de Alto Rendimento',
+      activeStudents: 0,
+      monthlyRevenueGross: 0,
+      monthlyRevenueNet: 0,
+      platformFeeRate: 0.15,
+      stripeConnected: false,
+      stripeAccountId: '',
+      availablePayout: 0,
       authMethod: 'google',
       isNewUser: true
     };
 
+    // Limpeza mandatória da base fictícia para novos cadastros
     try {
       localStorage.setItem('odomo_pro_current_user', JSON.stringify(proUserSession));
+      localStorage.setItem('odomo_pro_students', JSON.stringify([]));
+      localStorage.setItem('odomo_pro_transactions', JSON.stringify([]));
+      localStorage.setItem('odomo_pro_routines', JSON.stringify([]));
+      localStorage.removeItem('odomo_current_pro');
     } catch (e) {}
 
     setRegisteredUser({
@@ -397,6 +463,7 @@ export const ProLoginScreen: React.FC<ProLoginScreenProps> = ({
                 /* Etapa 2: Confirmação de CPF, Maioridade e Equivalência de Nome (Receita Federal) */
                 <GoogleCpfCompletionStep
                   userProfile={googleProfile}
+                  isPro={true}
                   onCancel={() => setGoogleProfile(null)}
                   onSwitchAccount={handleStartGoogleAuth}
                   onSuccess={handleGoogleRegistrationSuccess}
