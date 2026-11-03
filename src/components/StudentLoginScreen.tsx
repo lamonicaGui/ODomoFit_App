@@ -68,8 +68,35 @@ export const StudentLoginScreen: React.FC<StudentLoginScreenProps> = ({
     fullName: string;
     userProfile: GoogleUserProfile 
   }) => {
+    const finalName = data.fullName || data.userProfile.fullName;
+    const emailPrefix = data.userProfile.email ? data.userProfile.email.split('@')[0] : 'atleta';
+    const cleanUsername = '@' + emailPrefix.toLowerCase().replace(/[^a-z0-9._]/g, '');
+
+    const googleUserSession = {
+      id: `usr_g_${Date.now()}`,
+      name: finalName,
+      email: data.userProfile.email,
+      username: cleanUsername,
+      avatarUrl: data.userProfile.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+      bio: 'Atleta O Domo FIT 🏛️ • Foco e alta consistência.',
+      followersCount: 0,
+      followingCount: 0,
+      prsCount: 0,
+      streakDays: 1,
+      hasNutritionPlan: true,
+      assignedTrainerName: 'Dr. Rodrigo Menezes (CREF 048291-G/SP)',
+      assignedNutritionistName: 'Dra. Beatriz Lima (CRN-3 48192)',
+      authMethod: 'google',
+      isNewUser: true
+    };
+
+    try {
+      localStorage.setItem('odomo_current_user', JSON.stringify(googleUserSession));
+      localStorage.setItem('odomo_user_posts', JSON.stringify([]));
+    } catch (e) {}
+
     setRegisteredUser({
-      name: data.fullName || data.userProfile.fullName,
+      name: finalName,
       cpf: data.cpf,
     });
     setGoogleProfile(null);
@@ -91,6 +118,28 @@ export const StudentLoginScreen: React.FC<StudentLoginScreenProps> = ({
       setErrorMessage('Por favor, informe sua senha.');
       return;
     }
+
+    const emailUserSession = {
+      id: `usr_e_${Date.now()}`,
+      name: identifier.includes('@') ? identifier.split('@')[0] : identifier,
+      email: identifier.includes('@') ? identifier : `${identifier}@odomofit.com.br`,
+      username: identifier.startsWith('@') ? identifier : `@${identifier.split('@')[0]}`,
+      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400',
+      bio: 'Atleta O Domo FIT 🏛️ • Foco em hipertrofia e saúde.',
+      followersCount: 0,
+      followingCount: 0,
+      prsCount: 0,
+      streakDays: 1,
+      hasNutritionPlan: true,
+      assignedTrainerName: 'Dr. Rodrigo Menezes (CREF 048291-G/SP)',
+      assignedNutritionistName: 'Dra. Beatriz Lima (CRN-3 48192)',
+      authMethod: 'email',
+      isNewUser: true
+    };
+    try {
+      localStorage.setItem('odomo_current_user', JSON.stringify(emailUserSession));
+      localStorage.setItem('odomo_user_posts', JSON.stringify([]));
+    } catch (e) {}
 
     setIsLoading(true);
     setTimeout(() => {
